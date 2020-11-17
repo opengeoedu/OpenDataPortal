@@ -1,0 +1,46 @@
+version: '3.8'
+services:
+  portal:
+    image: shinyapp:4
+    build:
+      context: .
+      dockerfile: config/Dockerfile
+#    restart: always
+    user: 'root'
+    ports:
+      - "8787:8787"
+    env_file:
+      - "./.env"
+    volumes:
+      - ".:/home/shiny/portal"
+      - "./R_LIBS/:/home/shiny/R/"
+    command: bash -c "echo 'rstudio:$PASSWORD' | chpasswd &&
+             getent group ogeportal || groupadd -g $GID ogeportal &&
+             usermod -a -G ogeportal -u $UID shiny && usermod -g ogeportal shiny &&
+             echo 'shiny:$PASSWORD' | chpasswd &&
+             usermod -a -G ogeportal root &&
+             rstudio-server start &&
+             /home/shiny/portal/config/shiny-server.sh"
+  db:
+   image: postgres_portal
+   build:
+       context: .
+       dockerfile: config/Dockerfile-db
+   user: 'postgres'
+   env_file:
+     - "./.env"
+   expose:
+      - "5432"
+   #ports:
+   #   - "3001:8080"
+#   volumes:
+#     - "portal_pgdata:/var/lib/postgresql/data"
+#volumes:
+#    portal_pgdata
+  nginx:
+    image: portal-nginx
+    build:
+      context: .
+      dockerfile: config/Dockerfile-nginx
+    ports:
+       - "80:89"

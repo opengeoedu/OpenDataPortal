@@ -1,0 +1,426 @@
+---
+title: "OpenDataPortal"
+output: 
+  flexdashboard::flex_dashboard:
+    #source_code: "https://github.com/opengeoedu/opengeoedu.github.io/"
+    #social: [ "menu"] #doesn't work with iframe parent
+    orientation: rows
+    vertical_layout: fill
+    logo: img/icon_scaled.jpg
+    favicon: img/icon_scaled.jpg
+    theme: cosmo
+    css: ['css/dashboard.css', 'css/navbar.css', 'css/dynamic.css']
+    includes:
+      after_body: html/footer.html
+     # in_header: header.txt
+   # navbar:
+    #  - { title: "Impressum", href: "https://www.auf.uni-rostock.de/footer/impressum/", align: right , target: "_blank"}
+  # source_code: https://github.com/opengeoedu/opengeoedu.github.io
+runtime: shiny
+
+  
+---
+
+
+
+
+
+```{r global, include=FALSE}
+library(leaflet)
+library(flexdashboard)
+library(DT)
+library(htmltools)
+library(crosstalk)
+library(shiny)
+library(shinyjs)
+library(jsonlite) #for loading email conf
+library(mailR)
+
+
+DEBUG = TRUE
+if(DEBUG) { #for debugging purposes, you might want to enable this script that pre-renders map (m), statistics (flext) and data table (portale), otherwise the data is loaded from a file where these intermnediate objects are cached for performance reasons, i.e. reducing the number of packages and data loaded into the app
+  source("R/generate_all_data.R")
+ # source("R/generate_stats.R")
+} else {
+  load("out/prerendered_content.RData")
+}
+
+library(shiny)
+library(shinyjs)
+shiny::addResourcePath("icontemp", file.path(getwd(), "icontemp"))
+shiny::addResourcePath("img", file.path(getwd(), "img"))
+shiny::addResourcePath("out_geodata", file.path(getwd(), "out_geodata"))
+shiny::addResourcePath("out", file.path(getwd(), "out"))
+shiny::addResourcePath("data", file.path(getwd(), "data"))
+shiny::addResourcePath("js", file.path(getwd(), "js"))
+shiny::addResourcePath("css", file.path(getwd(), "css"))
+
+options(DT.options = list(language = list(url = '//cdn.datatables.net/plug-ins/1.10.15/i18n/German.json', responsive = TRUE,  bPaginate = TRUE, autoWidth = TRUE, scrollX=TRUE)))
+
+
+#-----------------------------------------------------------------------
+```
+
+
+
+
+Karte {data-icon="glyphicon-globe"}
+=========================================================
+
+
+```{r}
+#attach(mapping.env)
+portalMapUI <- function(id) {
+  
+  ns <- NS(id)
+  shiny::tagList(leafletOutput(ns("map")))
+}
+
+
+# Server function
+portalMap <- function(input, output, session) {
+
+  output$map <- renderLeaflet({
+    withProgress(message = "Karte wird geladen...", expr = {
+      isolate({
+      setProgress(value = 1)
+      get("m",envir=mapping.env)
+      })
+    })
+  })
+  }
+  
+
+# call the module
+#if(!interactive()){
+
+portalMapUI("oge")
+callModule(portalMap, "oge")
+
+#detach()
+  
+# 
+# server <- function(input, output, session) {
+#   portalMap("ogemap")
+# }
+
+#ui <- fluidPage(
+#  portalMapUI("ogemap")
+#)
+#shinyApp(ui,portalMap)
+#}
+
+```
+
+
+
+Tabelle {data-icon="glyphicon-list"}
+=========================================================
+
+```{r fig.height=8.5}
+attach(mapping.env)
+tags$div(align="middle", style="text-align:center", class="main-filter-group",
+ bscols(widths = c(6,6),
+    div(style="display:inline-block; text-align:left",title="Aktivierte Datenfilter sind sowohl auf der Karte als auch in der Tabelle wirksam",                   filter_checkbox("bezug_portal", "Portal-Typ", sd, ~Typ_names, inline = FALSE, allLevels = TRUE, columns = 2)
+    ),
+    div(style="display:inline-block; text-align:left",title="Aktivierte Datenfilter sind sowohl auf der Karte als auch in der Tabelle wirksam",                   tagList(
+          filter_checkbox("bezug_check", "Reichweite", sd, ~Reichweite, inline = FALSE, columns = 2),                                                               tags$div(filter_select(id="country_select", "Länder-Filter: ", sd, ~Land), style="max-width:300px")
+        )
+    )
+    )
+ )
+
+#customize the country selection box with javascript
+htmltools::tags$script(id="country_select_map", type= "application/json",
+                       country_json)
+
+div(class="metawrapper", style="height:75%",
+#div(style="height:100%",
+  htmltools::tagList(
+    DT::datatable(sd_table, escape = FALSE, extensions = c("Responsive", "Select", "KeyTable","Scroller"), 
+                  options = list(
+                    columnDefs= list(list(responsivePriority= 12000, targets=2),
+                                     list(type="range-order", targets=-1)),
+                    order = list(list(4, 'asc'), list(3, 'asc'))
+                    )
+                  , elementId = "portals_table")
+    )
+)
+
+#tags$script(type = "text/javascript", href = "//cdn.datatables.net/plug-ins/1.10.16/sorting/enum.js")
+
+# tags$script(type = "text/javascript", "
+#            $.fn.dataTable.enum( [ 'international', 'national', 'regional','kommunal' ] );
+#            $('#portals_table').DataTable();
+#          ")
+
+
+detach()
+```
+
+
+Filter {data-icon="ion-settings" .hidden}
+=========================================================
+```{r}
+
+#make a checkbox-row according to croosstalk
+makerow <- function(value, label){
+ tags$div(class="checkbox", tags$label(class="checkbox_container", list(
+   tags$input(class="crosstalk_checkbox", value = value, type="checkbox", onChange = paste0("toggleFilter('",value,"', this)")),
+   tags$span(class="checkmark"),
+   tags$span(class="checkbox_label", label)
+ )))
+}
+
+#devide rows into n columns
+makecols <- function(rows,n){
+  step <- ceiling(length(rows)/n)
+  sel1 <- seq(1, length(rows), by = step)
+  sel2 <- sel1 + (step -1)
+  sel2[length(sel2)] <- n*step
+  mapply(function(a,b){
+    tags$div(class="crosstalk-options-column",
+      tagList(
+        rows[a:b]
+      )         
+    ) 
+    
+  }, a  = sel1, b = sel2, SIMPLIFY = FALSE)
+}
+
+makefiltergroup <-function(values, labels, heading){
+    tags$div(style="display:inline-block; text-align:left", 
+        tags$label(class="control-label",heading),
+        tags$div(class = "form-group crosstalk-input-checkboxgroup crosstalk-input crosstalk-input-bound shiny-bound-input",
+        tags$div(class="crosstalk-options-group", 
+               makecols(
+                  mapply(makerow, value=values, label=labels, SIMPLIFY = FALSE)
+                  , 2
+                ) 
+        )
+      )
+    )
+}
+attach(mapping.env)
+tags$div(align="middle", style="text-align:center",
+  bscols(widths = c(6,6),
+      makefiltergroup(levels(portale$Typ_names), levels(portale$Typ_names), "Portal-Typ"),
+      makefiltergroup(levels(portale$Reichweite), levels(portale$Reichweite), "Reichweite")
+  )
+)
+detach()
+```
+
+
+
+Metadaten {data-icon="glyphicon-download"}
+=========================================================
+
+Die dargestellten Geodaten zu den Open Data Portalen und GDIs in Deutschland, Österreich und Schweiz können in verschiedenen Dateiformaten heruntergeladen werden. Beachten Sie, dass die Koordinaten sich überlappender Punkte zwecks besserer Darstellung leicht verschoben wurden. Alle Koordinaten sind in Längen- und Breitengraden angegeben (Tabellenspalten mit Namen "lon" und "lat") und beziehen sich auf das Datum WGS84. Die eventuell aktivierten Auswahl-Filter wirken sich nicht auf den Download-Bereich aus. Alle Einträge und Metadaten sind vollschändig im jeweiligen Download enthalten.
+
+* [CSV Tabelle](out_geodata/portale_shifted.csv)
+* [geojson](out_geodata/portale_shifted.geojson)
+* [GeoPackage](out_geodata/portale_shifted.gpkg)
+* [Geography Markup Language (GML)](out_geodata/portale_shifted.gml)
+* [Keyhole Markup Language (KML)](out_geodata/portale_shifted.kml)
+* [ESRI Shapefile (ZIP-Archiv)](out_geodata/portale_shifted-ESRI-Shapefile.zip)
+
+Die geokodierten Rohdaten (mit überlappenden Koordinaten) sind als CSV-Tabelle verfügbar:
+
+* [Rohdaten (CSV Tabelle)](data/portale_geocoded4.csv)
+
+<br/>
+
+<a rel="license" href="http://creativecommons.org/licenses/by-sa/4.0/" target="_blank"><img alt="Creative Commons Lizenzvertrag" style="border-width:0" src="https://i.creativecommons.org/l/by-sa/4.0/88x31.png" /></a><br />Die hier bereitgestellten Metadaten sind lizenziert unter einer <a rel="license" href="http://creativecommons.org/licenses/by-sa/4.0/" target="_blank">Creative Commons Namensnennung - Weitergabe unter gleichen Bedingungen 4.0 International Lizenz</a>. Bitte [kontaktieren](http://www.opengeoedu.de/kontakt) Sie das OpenGeoEdu-Team bei diesbezüglichen Fragen oder falls die Daten auf eine andere Weise nutzen möchten.
+
+Statistik {data-icon="ion-stats-bars"}
+=========================================================
+
+Die nachfolgende Tabelle gibt einen Überblick über die gegenwärtig eingetragenen Datenportale und ist von links nach rechts zu lesen. Die linke Spalte gibt die Anzahl der Einträge nach Typ des Portales (Open Data Portal oder GDI-Knotenpunkt bzw. Geoportal) an. Die Spalte rechts daneben gibt, nach Portal-Typ aufgeschlüsselt, das Land an, in welchem das Portal bzw. der Herausgeber der Inhalte verortet ist. In einigen Fällen beteiligen sich mehrere Länder an einem Portal (Beispiel: <a href="http://www.georhena.eu/" target="_blank">GeoRhena</a>, ein deutsch/französisch/schweizer Projekt zur Erfassung der Oberrhein-Region). Diese Portale sind hier als *länderübergreifend* kategorisiert. Die rechten vier Spalten schlüsseln die Portale nach ihrer Reichweite, spezifisch für jedes Land und jede Portal-Art, auf. Dabei halten kommunale Portale Daten über einzelne Kommunen, Landkreise oder Städte bereit. Regionale Portale beziehen sich auf einzelne Regionen oder Bundesländer. Nationale Portale halten für ein bestimmtes Land umfassende Daten bereit. Internationale Portale führen Daten über mehrere Länder, Kontinente oder weltweite Datensätze.
+
+
+```{r echo=FALSE, tidy=TRUE}
+with(statistics.env, {
+  statistics_html$attribs$class <- "statwrapper"
+  statistics_html
+})
+```
+
+
+<br/>
+<a href="out/verzeichnis_statistik.docx" download><button class="btn"><i class="fa fa-download"></i> Download Statistik (.docx)</button></a>
+<a href="out/verzeichnis_haeufigkeitsverteilung.csv" download><button class="btn"><i class="fa fa-download"></i> Download Haufigkeitsverteilung (.csv)</button></a>
+
+<p>
+<a rel="license" href="http://creativecommons.org/licenses/by-sa/4.0/" target="_blank"><img alt="Creative Commons Lizenzvertrag" style="border-width:0" src="https://i.creativecommons.org/l/by-sa/4.0/88x31.png" /></a>
+</p>
+<p>Die hier bereitgestellten Metadaten sind lizenziert unter einer <a rel="license" href="http://creativecommons.org/licenses/by-sa/4.0/" target="_blank">Creative Commons Namensnennung - Weitergabe unter gleichen Bedingungen 4.0 International Lizenz</a>. Bitte [kontaktieren](http://www.opengeoedu.de/kontakt) Sie das OpenGeoEdu-Team bei diesbezüglichen Fragen oder falls die Daten auf eine andere Weise nutzen möchten.</p>
+
+
+Neuer Eintrag / Korrektur {data-icon="ion-compose"}
+=========================================================
+```{r out.height="800px"}
+source("R/new_entry_form.R")
+attach(mapping.env)
+shinyApp(
+  #### Definition of the Webform:
+  ui = fluidPage(
+    shinyjs::useShinyjs(),
+    id = "submit-form",
+    numericInput("ID", label = "ID (bei vorhandenen Einträgen)", min = 1, max = dim(portale)[1], value = NA_integer_, step = 1),
+    
+    textInput("Titel", label = "Titel", placeholder = "Titel der Website"),
+    
+    textInput("URL", label = "URL", placeholder = "https://www.beispiel.de"),
+    textAreaInput("Beschreibung", label = "Beschreibung", placeholder = "Kurze Beschreibung des Open Data Portals oder der GDI", width = "400px",   height = "100px"),
+    
+    radioButtons("Typ", "Art des Portals:",
+                 choiceNames = 
+                   table_meta$typ_names, 
+                 choiceValues = 
+                   table_meta$typ,
+                 inline = TRUE,
+    ),
+    
+    textInput("Ort", label = "Ort (Bezug des Portals)", placeholder = "Gemeinde, Land oder Region"),
+    
+    radioButtons("Reichweite", "Reichweite:",
+                 choices =
+                   table_meta$reichw, inline = TRUE,
+    ),
+    
+    textInput("Adresse_Herausgeber", label = "Adresse des Herausgebers oder Koordinaten zur Geolokalisierung des Portals", placeholder = "52.5161 N, 13.3777 E / Pariser Platz, 10117 Berlin", width = "400px"),
+    
+    radioButtons("Oeffentlich", "Staatlich / Öffentlich",
+                 choiceNames =
+                   table_meta$staatl,
+                 choiceValues =
+                   table_meta$staatl, inline = TRUE,
+    ), title = "Portal eintragen / editieren",
+    tags$hr(),
+    textInput("Autor", label = "Kontakt (Optional)", placeholder = "Ihr Name"),
+    #tags$input(id="Email",name="Email", type="Email", placeholder="Ihre E-Mail-Adresse"),
+    textInput("Email",NULL, placeholder = "Ihre E-Mail-Adresse"),
+    checkboxInput("Einverstaendnis",
+                  "Ich willige hiermit in die Verarbeitung meiner personenbezogenen Daten ein. Diese dient ausschließlich zur Kontaktaufnahme im Rahmen des Projektes OpenGeoEdu der Universität Rostock"),
+    "\t(Siehe ", tags$a("Datenschutzerklärung", href="https://www.uni-rostock.de/footer/datenschutz/"),")",
+    checkboxInput("Newsletter", "Ich bin am Newsletter interessiert."),
+    tags$hr(),
+    tags$head(
+      tags$style(HTML('#submit{background-color:#009de0;; color: white;} #submit:hover{background-color:#e7e7e7; color: black;} '))
+    ),
+    actionButton("submit","Anfrage senden"),  actionButton("reset","Formular zurücksetzen"),
+    tags$hr(),
+    "Offene Anfragen:"
+    ,DT::dataTableOutput("responses") 
+    
+  ),
+  #####
+  
+  #Server logic for behaviour of webform
+  #####
+  server = function(input, output, session){
+    observe({
+      # when a user types any existing id to the form, all other fields will be updated with the portals' data
+      id <- input$ID
+      if(!is.na(id) && is.numeric(id)){
+        updateTextInput(session, inputId = "Titel", value = portale$Titel[id])
+        updateTextInput(session, inputId = "URL", value = portale$URL[id])
+        updateRadioButtons(session, inputId = "Typ", selected = portale$Typ[id])
+        updateTextAreaInput(session, inputId = "Beschreibung", value = portale$Beschreibung[id])
+        updateRadioButtons(session, inputId = "Reichweite", selected = portale$Reichweite[id])
+        coords <- paste0(portale[id,"lat"]," N, ", portale[id,"lon"]," E")
+        updateTextInput(session, inputId = "Adresse_Herausgeber", value = coords)
+        updateTextInput(session, inputId = "Ort", value = portale$Ort[id])
+        updateRadioButtons(session, inputId = "Oeffentlich", selected = portale$Staatlich_Öffentlich[id])
+      }
+    })
+    
+    # Whenever a field is filled, aggregate all form data
+    formData <- reactive({
+      data <- sapply(
+        c("ID","Titel","URL","Typ","Beschreibung","Reichweite", "Adresse_Herausgeber", "Ort", "Oeffentlich", "Autor", "Email","Einverstaendnis", "Newsletter"),
+        function(x) input[[x]]
+        )
+      data
+    })
+    
+    # When the Submit button is clicked, save the form data
+    observeEvent(input$submit, {
+      formdata <- formData()
+      
+      if((formdata["Email"] !=""|| formdata["Autor"] != "")  
+         && !as.logical(formdata["Einverstaendnis"])){
+        shinyjs::alert("Hinweis: Bitte bestätigen Sie die Einverständniserklärung damit wir die von Ihnen eingegebenen personenbezogenen Angaben (Name/E-Mail) vearbeiten können.\n\nFalls Sie Ihren Beitrag anonym einsenden möchten, entfernen Sie bitte die betreffenden Angaben aus Formular.")
+      }else{
+        saveData(formdata)
+        create_emails(formdata)
+        shinyjs::alert("Vielen Dank!\nIhre Anfrage wurde gesendet und wird bald bearbeitet.")
+        shinyjs::reset("submit-form")
+        output$responses <- DT::renderDataTable({
+          input$submit
+          load_form_entry_data()
+        }, extensions = "Responsive")   
+      }
+      
+    })
+    
+    observeEvent(input$reset, {
+      shinyjs::reset("submit-form")
+    })
+    
+    # Show the previous responses
+    # (update with current response when Submit is clicked)
+    output$responses <- DT::renderDataTable({
+      input$submit
+      load_form_entry_data()
+    }, extensions = "Responsive")    
+    
+  }
+)
+detach()
+
+if(DEBUG){
+ # library(containerit)
+ # df <- dockerfile(maintainer = "OpenGeoEdu", image = "rocker/geospatial")
+ # write(df, file = "out/Dockerfile2")
+}
+
+```
+
+Impressum
+=========================================================
+
+#### Herausgeber:  
+
+Professur für Geodäsie und Geoinformatik  
+Universität Rostock  
+18051 Rostock  
+Tel. 03824983200  
+Fax. 03814983202  
+Email: Bitte nutzen Sie das [Kontaktformular](https://www.opengeoedu.de/kontakt.aspx)
+
+<hr/>
+
+#### Haftungsausschluss  
+
+Trotz intensiver und sorgfältiger Kontrolle haften die Herausgeber nicht für Richtigkeit, Aktualität und Vollständigkeit ihrer Webseiten. Wir weisen ausdrücklich darauf hin, dass die Inhalte sämtlicher Webseiten, die über externe Links auf der Webseite erreichbar sind, ausschließlich von den Betreibern dieser Webseiten verantwortet werden. Jegliche Haftung für die Inhalte entsprechend verlinkter Seiten ist damit ausgeschlossen.
+
+<hr/>  
+
+#### Urheberrechte  
+  
+Sämtliche Urheberrechte an Texten, Bildern, Tabellen und grafischen Darstellungen, die auf den Webseiten öffentlich gemacht werden, liegen - soweit nicht anders kenntlich gemacht - bei der Universität Rostock. Jegliche, auch auszugsweise Verwendung und Verbreitung in jedweder medialen Form bedarf der ausdrücklichen schriftlichen Genehmigung durch die Universität Rostock.
+
+#### Datenschutzerklärung
+
+<a href https://www.uni-rostock.de/footer/datenschutz/" target="_blank">Datenschutzerklärung </a>
+
+#### Piwik/Matomo Opt-out
+
+<iframe src="https://www.opengeoedu.de/analytics/index.php?module=CoreAdminHome&action=optOut&language=de" frameborder="0"
+style="all: initial; height: 20vh; width:100%; max-width: 900px">
+</iframe>
+
+
+<script src="js/oge.js"> </script>

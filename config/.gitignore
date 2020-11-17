@@ -1,0 +1,5 @@
+.*
+!.gitignore
+!*.template
+!Dockerfile
+!shiny-server*
