@@ -36,7 +36,9 @@ send_mail<- function(from = creds_file("config/.blastula.creds")$user, recipient
     } else{
       print(e)
     }
+    return(FALSE)
   })
+  return(TRUE) ## seems like everything is ok...
 }
 
 email_to_user <- function(data, dry_run = FALSE) {
@@ -156,6 +158,8 @@ create_emails <- function(data){
   nms <- str_replace(nms,"^Staatlich_Öffentlich$","Staatlich / &Ouml;ffentlich")
   nms <- str_replace(nms,"^Adresse_Herausgeber$","Adresse / Koordinaten des Herausgebers")
   names(data) <- nms
+  table_meta <- jsonlite::read_json("data/table_meta.json", simplifyVector = TRUE)
+  
   data[["Typ"]] <- table_meta$typ_names[which(table_meta$typ == data[["Typ"]])]
   
   if(file.exists("config/.blastula.creds") && file.exists("config/message.html") ){
@@ -183,6 +187,9 @@ load_form_entry_data <- function(include_example=TRUE, public_information=TRUE, 
   data <- lapply(files, 
                  function(file){
                    entry <- read.csv(file, stringsAsFactors = FALSE)
+                   #conversion because logical values might be interpreted as logical instead of numeric:
+                   entry$ID <- as.numeric(newentry_data$ID) 
+                   
                    col_names <- colnames(entry)
                    col_names <- str_replace(col_names, "^Oeffentlich$", "Staatlich_Öffentlich")
                    colnames(entry) <- col_names

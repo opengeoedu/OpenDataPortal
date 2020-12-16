@@ -7,8 +7,8 @@ services:
       dockerfile: config/Dockerfile
 #    restart: always
     user: 'root'
-    ports:
-      - "8787:8787"
+  # ports:
+  #  - "8787:8787"
     env_file:
       - "./.env"
     volumes:
@@ -42,5 +42,5 @@ services:
     build:
       context: .
       dockerfile: config/Dockerfile-nginx
-    ports:
-       - "80:89"
+  # ports:
+  #     - "80:89"

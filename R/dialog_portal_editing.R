@@ -5,7 +5,9 @@ library(stringr)
 library(shinyjs)
 library(daff)
 library(dplyr)
+library(xml2)
 source("R/utils.R")
+source("R/processing_functions.R")
 #source("R")
 
 tableeditor1 <- function(mydata, additionalContent="") {
@@ -25,7 +27,8 @@ tableeditor1 <- function(mydata, additionalContent="") {
     
     ##### Callback functions.
     my.insert.callback <- function(data, row) {
-      mydata <<- rbind(data, mydata)
+      #mydata <<- rbind(data, mydata)
+      mydata <<- data
       return(mydata)
     }
     
@@ -97,21 +100,25 @@ edit_portale <- function(sourcefile="data/portale_geocoded4.csv"){
   result <- editDialog(portale)
   if(result$data_changed){
     write.csv(result$new_data, file = "data/portale_geocoded4.csv", row.names = FALSE)
+    message("CSV is written. Updating data...")
     source("R/generate_all_data.R")
   }
 }
 
-editDialog <- function(input_data) {
+#check location information may only work properly for portal data
+editDialog <- function(input_data, check_location_information = FALSE) {
   new_data <- input_data
   editing <- TRUE
   data_changed <- FALSE
   while(TRUE){
     if(editing){
       new_data <- tableeditor1(new_data)
+      new_data <- infer_location_information(new_data)
       editing <- FALSE
     }else{
       message("[Editor dialog] Unknown choice. Pleas type again!")
     }
+  # 
     diff_result <- daff::diff_data(input_data,new_data)
     message("[Editor dialog] Summary of changes:")
     print(summary(diff_result))
@@ -173,6 +180,7 @@ merge_new_entries <- function(){
         summary(difftable) %>% print()
         difftable %>% render_diff()
         newentry_data <- changed_data
+        newentry_data <- infer_location_information(newentry_data)
         message("Entry data is changed temporarily, the differences are displayed.")
         message("Note that the changes will only be permanent upon completing the review process.\n")
       } else if(choice=="q"){
@@ -194,7 +202,8 @@ merge_new_entries <- function(){
           
           merged_rows <- overwriting_rows[0,]
           
-          for(i in dim(overwriting_rows)[1]){
+          if(nrow(overwriting_rows)>0)
+          for(i in nrow(overwriting_rows)){
             overwriting_row <- overwriting_rows[i,]
             original_entry <- portale %>% subset(ID==overwriting_row$ID)
             # new row, as it will be merged
@@ -223,9 +232,14 @@ merge_new_entries <- function(){
                 next;
               }else if(choice=="e"){
                 difftable <- daff::diff_data(original_entry, preview_row) 
+                summary(difftable) %>% print()
                 diff_html <- difftable %>% render_diff(fragment = TRUE)
                 preview_row <- tableeditor1(preview_row, additionalContent =
                                               list(tags$h2("Summary of changes:"), tags$style(".modify{  background-color:#5555ff;}"), shiny::HTML(diff_html), tags$br()))
+                preview_row <- infer_location_information(preview_row)
+                difftable <- daff::diff_data(original_entry, preview_row) 
+                summary(difftable) %>% print()
+                diff_html <- difftable %>% render_diff(fragment = TRUE)
                 next;
               }else if(choice=="d"){
                 #by not adding the row to "merged entries", the entry will be discarded later
@@ -246,7 +260,7 @@ merge_new_entries <- function(){
           }
           
         
-          
+          print(new_rows)
           new_rows$ID = (max(portale_new$ID)+1):(max(portale_new$ID)+dim(new_rows)[1])
           message("Generated new ids for new entries:\n\t", new_rows$ID %>% paste(collapse = " "))
           #names(portale)
@@ -265,6 +279,10 @@ merge_new_entries <- function(){
               break;
           }else if(choice=="e"){
               portale_new <- tableeditor1(portale_new)
+              portale_new <- infer_location_information(portale_new)
+              difftable <- daff::diff_data(portale, portale_new) 
+              summary(difftable) %>% print()
+              difftable %>% render_diff()
              next
           } else  if(choice=="q"){
             message("Merge abborted by user")

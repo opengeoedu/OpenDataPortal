@@ -262,6 +262,7 @@ Neuer Eintrag / Korrektur {data-icon="ion-compose"}
 ```{r out.height="800px"}
 source("R/new_entry_form.R")
 attach(mapping.env)
+portale <- get("portale", mapping.env) # for some reason, there are errors if just attached
 shinyApp(
   #### Definition of the Webform:
   ui = fluidPage(

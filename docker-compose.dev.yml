@@ -1,0 +1,9 @@
+version: '3.8'
+services:
+  portal:
+    ports:
+      - "8787:8787"
+  db:
+  nginx:
+    ports:
+       - "80:89"

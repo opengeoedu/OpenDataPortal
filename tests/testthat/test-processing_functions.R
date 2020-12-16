@@ -21,6 +21,19 @@ test_that("geocoding works", {
   })
 })
 
+test_that("inferring missing/implicit data works", {
+  withr::with_dir("../..",{
+    library(magrittr)
+    portale_example <- read.csv("data/portale_geocoded4_backup.csv", stringsAsFactors = FALSE)
+    example_entry <- read.csv("data/user_input/Edits_Beispiel.csv", stringsAsFactors = FALSE)
+    example_entry$Adresse_Herausgeber <- "Aachen"
+    example_entry %>% infer_columns_from_formdata() 
+    portale_example <- merge(portale_example, example_entry, all=TRUE)
+    infered_data <- portale_example %>% infer_location_information(ask=FALSE)
+  })
+})
+
+
 
 
 test_that("country names can be inferred from lat/lon coordinates", {

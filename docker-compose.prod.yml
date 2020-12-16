@@ -1,0 +1,11 @@
+version: '3.8'
+services:
+  portal:
+    ports:
+      - "8788:8787"
+    restart: always
+  db:
+    restart: always 
+  nginx:
+    ports:
+       - "85:89"

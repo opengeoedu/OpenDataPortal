@@ -31,16 +31,16 @@ geocode_nominatim <- function(address, email="info@opengeoedu.de", country=NULL,
         if(verbose)
           message("Sending request: ",.url)
         con <- url(.url)
-        xres <- read_xml(con)
+        xres <- xml2::read_xml(con)
         if(verbose)
           message(xres)
-        xloc <- xml_find_first(xres, ".//place")
+        xloc <- xml2::xml_find_first(xres, ".//place")
         
-        lon <- xml_attr(xloc,"lon")
-        lat <- xml_attr(xloc,"lat")
-        name <- xml_attr(xloc,"display_name")
-        type <- xml_attr(xloc,"osm_type")
-        message("Found coordinates ",lat,", ",lon," for address ", address)
+        lon <- xml2::xml_attr(xloc,"lon")
+        lat <- xml2::xml_attr(xloc,"lat")
+        name <- xml2::xml_attr(xloc,"display_name")
+        type <- xml2::xml_attr(xloc,"osm_type")
+        message("Found coordinates ",lat,", ",lon," for address ", paste(address, collapse = ", "))
         lat <- as.numeric(lat) # TODO: maybe separate try/catch for the conversion
         lon <- as.numeric(lon)
         if(!is.na(lon) && !is.na(lat)){
@@ -57,7 +57,7 @@ geocode_nominatim <- function(address, email="info@opengeoedu.de", country=NULL,
         
       })
       if (!success) {
-        warning("Failed determine geolocation of ", address)
+        warning("Failed determine geolocation of ",  paste(address, collapse = ", "))
       }
       
       
@@ -70,11 +70,11 @@ countryname_from_latlon_factory <- function(geonames_countryinfo = read.csv("dat
     
     geocode <- function(lat, lon){
       pt <- sf::st_point(c(lon, lat)) # be careful about the order!!!
-      pt <- st_sf(1,list(pt),crs=4326)
-      pt <- pt %>% st_transform(3857)
+      pt <- sf::st_sf(1,list(pt),crs=4326)
+      pt <- pt %>% sf::st_transform(3857)
       
       worldmap <- sf::st_as_sf(maps::map("world", fill = TRUE)) %>% sf::st_transform(3857)
-      country<-st_filter( worldmap,pt,.predicate=st_contains)
+      country<-sf::st_filter( worldmap,pt,.predicate=sf::st_contains)
       if(dim(country)[1]>1){
         stop("Ambigous result, multiple countries match the coordinates?!")
       } else if(dim(country)[1]<1){
@@ -122,7 +122,10 @@ infer_columns_from_formdata <- function(newentry_data){
   has_laton <- newentry_data$Adresse_Herausgeber %>% str_detect("\\d{1,2}\\.\\d*.+[NS],.+\\d{1,3}\\.\\d*.+[EW]") %>% which()
   message("Lat / lon coordinates were detected for ", length(has_laton), " entries and automatically infered as columns.")
   
-  message("adding missing columns: lat, lon and Land")
+  message("adding missing possibly columns: ID, lat, lon and Land")
+  if(!"ID" %in% colnames(newentry_data)){
+    try(newentry_data <- newentry_data %>% tibble::add_column(ID = NA_character_, .before=1))
+  }
   if(!"lat" %in% colnames(newentry_data)){
     if("Adresse_Herausgeber" %in% colnames(newentry_data))
       try(newentry_data <- newentry_data %>% tibble::add_column(lat = NA_real_, .after="Adresse_Herausgeber"))
@@ -148,10 +151,10 @@ infer_columns_from_formdata <- function(newentry_data){
 
 # tries to infer missing coordinates and country from address information and opens user dialog if necessary
 # presumes that the following input columns are givin: lon, lat, Titel, Land, Adresse_Herausgeber
-infer_location_information <- function(newentry_data){
+infer_location_information <- function(newentry_data, ask = TRUE){
   sel_missing_coords <- which(newentry_data$lat %>% is.na() & newentry_data$lon %>% is.na())
   
-  always_apply <- FALSE
+  always_apply <- !ask
   skip_geocoding <- FALSE
   for(i in sel_missing_coords){
     if(skip_geocoding)
@@ -171,7 +174,7 @@ infer_location_information <- function(newentry_data){
     while(TRUE & result$success){
       #print(result)
       if(!always_apply){ #skip dialog if user previously chose to always apply the geocoding data
-        message("Should the detected geocoding result be applyed to the data?\n\t(y)es, (n)o, yes to (a)ll, (s)kip geocoding for all entries")
+        message("Should the detected geocoding result be applied to the data?\n\t(y)es, (n)o, yes to (a)ll, (s)kip geocoding for all entries")
         choice <- readline()
         if(choice=="y")
           once_apply <- TRUE
@@ -203,7 +206,9 @@ infer_location_information <- function(newentry_data){
 }
 
 infer_country<-function(newentry_data){
-  sel_missing_country <- which(newentry_data$Land %>% is.na())
+  sel_missing_country <- which(newentry_data$Land %>% is.na() |
+                                 newentry_data$Land %>% is.null() |
+                                 newentry_data$Land == "" )
   #  print(newentry_data)
   # print(sel_missing_country)
   for(i in sel_missing_country){
