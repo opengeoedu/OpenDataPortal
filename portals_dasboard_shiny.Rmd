@@ -163,7 +163,7 @@ Filter {data-icon="ion-settings" .hidden}
 =========================================================
 ```{r}
 
-#make a checkbox-row according to croosstalk
+#make a checkbox-row according to crosstalk
 makerow <- function(value, label){
  tags$div(class="checkbox", tags$label(class="checkbox_container", list(
    tags$input(class="crosstalk_checkbox", value = value, type="checkbox", onChange = paste0("toggleFilter('",value,"', this)")),

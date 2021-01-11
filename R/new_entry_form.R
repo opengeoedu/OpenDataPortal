@@ -188,7 +188,9 @@ load_form_entry_data <- function(include_example=TRUE, public_information=TRUE, 
                  function(file){
                    entry <- read.csv(file, stringsAsFactors = FALSE)
                    #conversion because logical values might be interpreted as logical instead of numeric:
-                   entry$ID <- as.numeric(newentry_data$ID) 
+                   if(is.null(entry$ID))
+                     entry$ID <- NA
+                   entry$ID <- as.numeric(entry$ID) 
                    
                    col_names <- colnames(entry)
                    col_names <- str_replace(col_names, "^Oeffentlich$", "Staatlich_Öffentlich")
