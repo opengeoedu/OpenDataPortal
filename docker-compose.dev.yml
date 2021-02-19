@@ -6,4 +6,4 @@ services:
   db:
   nginx:
     ports:
-       - "80:89"
+       - "85:89"
