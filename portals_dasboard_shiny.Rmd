@@ -415,13 +415,7 @@ Sämtliche Urheberrechte an Texten, Bildern, Tabellen und grafischen Darstellung
 
 #### Datenschutzerklärung
 
-<a href https://www.uni-rostock.de/footer/datenschutz/" target="_blank">Datenschutzerklärung </a>
-
-#### Piwik/Matomo Opt-out
-
-<iframe src="https://www.opengeoedu.de/analytics/index.php?module=CoreAdminHome&action=optOut&language=de" frameborder="0"
-style="all: initial; height: 20vh; width:100%; max-width: 900px">
-</iframe>
+Siehe <a href="https://www.uni-rostock.de/footer/datenschutz/" target="_blank">https://www.uni-rostock.de/footer/datenschutz/</a>
 
 
 <script src="js/oge.js"> </script>

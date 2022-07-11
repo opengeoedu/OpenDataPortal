@@ -110,7 +110,25 @@ countryname_from_latlon_factory <- function(geonames_countryinfo = read.csv("dat
 countryname_from_latlon <- countryname_from_latlon_factory()
 rm(countryname_from_latlon_factory)
 
+# Helper function that tries to determine whether a string or a vector of strings contains coordinates
+# e.g.: str_contains_coords(c("1.3 N, 25 W", "blub", "1,1"))
+str_contains_coords <- function(str){
+  str <- str_trim(str)
+  str_detect(str, "^\\d{1,2}(\\.\\d*){0,1}[ ]*[NS],.{0,1}\\d{1,3}(\\.\\d*){0,1}[ ]*[EWOÖ]$")
+}
 
+#Helper function that tries to extract coordinates a vector as of strings if possible
+# e.g. str_extract_coords("1.3 N, 25 W")
+str_extract_coords <- function(str){
+  str <- str_trim(str)
+  coords <- list(
+    lat = gsub("^(\\d{1,2}(\\.\\d*){0,1}[ ])*[NS],.{0,1}\\d{1,3}(\\.\\d*){0,1}[ ]*[EWOÖ]$","\\1", str)  %>% as.numeric(),
+    lon = gsub("^\\d{1,2}(\\.\\d*){0,1}[ ]*[NS],.{0,1}(\\d{1,3}(\\.\\d*){0,1})[ ]*[EWOÖ]$","\\2", str) %>% as.numeric()
+  )
+  coords$lat[str_detect(str, "S")] <- coords$lat[str_detect(str, "S")] * -1
+  coords$lon[str_detect(str, "W")] <- coords$lon[str_detect(str, "W")] * -1
+  return(coords)
+}
 
 #####
 # Dialog functions assuming the "portals"-data.frames as input:
@@ -119,7 +137,7 @@ rm(countryname_from_latlon_factory)
 ## Some mandatory columns are ommited in the new-entry form but can be inferred 
 ## using this function:
 infer_columns_from_formdata <- function(newentry_data){
-  has_laton <- newentry_data$Adresse_Herausgeber %>% str_detect("\\d{1,2}\\.\\d*.+[NS],.+\\d{1,3}\\.\\d*.+[EW]") %>% which()
+  has_laton <- newentry_data$Adresse_Herausgeber %>% str_contains_coords()  %>% which()
   message("Lat / lon coordinates were detected for ", length(has_laton), " entries and automatically infered as columns.")
   
   message("adding missing possibly columns: ID, lat, lon and Land")
@@ -139,23 +157,68 @@ infer_columns_from_formdata <- function(newentry_data){
     try(newentry_data <- newentry_data %>% tibble::add_column(Land = NA_character_, .after="lon"))
   }
   
+  if(length(has_laton) > 0){
+    message("Infering coordinates from user input...")
+    coords = str_extract_coords(newentry_data$Adresse_Herausgeber[has_laton])
+    newentry_data[has_laton,]$lat <- coords$lat
+    newentry_data[has_laton,]$lon <- coords$lon
+  }
   
-  message("Infering coordinates from user input...")
-  newentry_data[has_laton,]$lat <- gsub("(\\d{1,2}\\.\\d*).+N.*","\\1", newentry_data$Adresse_Herausgeber[has_laton])  %>% as.numeric()
-  newentry_data[has_laton,]$lon <- gsub(".*[^0-9]*(\\d{1,3}\\.\\d*).+E.*","\\1", newentry_data$Adresse_Herausgeber[has_laton]) %>% as.numeric()
-  # note: south and west coordinates may not be relevant here and therefore omitted
   return(newentry_data)
 }
 
 
-
 # tries to infer missing coordinates and country from address information and opens user dialog if necessary
 # presumes that the following input columns are givin: lon, lat, Titel, Land, Adresse_Herausgeber
-infer_location_information <- function(newentry_data, ask = TRUE){
-  sel_missing_coords <- which(newentry_data$lat %>% is.na() & newentry_data$lon %>% is.na())
+require(leaflet) # leaflet is required for visualizing proposed coordinates during the dialog
+infer_location_information <- function(newentry_data, ask = TRUE, confirm_existing = FALSE){
+  sel_missing_coords <- newentry_data$lat %>% is.na() & newentry_data$lon %>% is.na()
+  sel_existing_coords <- which(!sel_missing_coords)
+  sel_missing_coords <- which(sel_missing_coords)
   
   always_apply <- !ask
   skip_geocoding <- FALSE
+  
+  #(Optionally) Iterate over all known locations and ask the user to confirm them
+  if(confirm_existing)
+    for(i in sel_existing_coords){
+      message("The following location for portal ", newentry_data$Titel[i], " was given by the user. ",
+              "\ncoordinates (lat, lon): ", newentry_data$lat[i],", ", newentry_data$lon[i],
+              "\nKeep this location?",
+              "\n\t(y)es, / (n)o, remove coordinates / yes to (a)ll user-given locations (don't ask)")
+      map <- leaflet() %>% 
+        setView(newentry_data$lon[i], newentry_data$lat[i], 10) %>% 
+        addTiles() %>% 
+        addPopups(newentry_data$lon[i], newentry_data$lat[i], paste0("Proposed location of:<br/><b>", newentry_data$Titel[i],"</b>" ) )
+      print(map)
+      #await user response
+  
+      answered <- FALSE
+      keep_all <- FALSE
+      while(!answered){
+        choice <- readline()
+        if(choice=="y")
+          answered <- TRUE
+        else if(choice=="a"){
+          keep_all <- TRUE
+          answered <- TRUE
+        }
+        else if(choice=="n"){
+          newentry_data[has_laton,]$lat <- NA_real_
+          newentry_data[has_laton,]$lon <- NA_real_
+          message("The coordinates of this entry were replaced by NA values.")
+          answered <- TRUE
+        } else{
+          message("Unknown input, please retry!")
+          next
+        }
+      }
+      if(keep_all)
+        break
+    }
+  
+  
+  #Iterate over all missing locations and try to infer them from addresses, if possible
   for(i in sel_missing_coords){
     if(skip_geocoding)
       break;
@@ -175,6 +238,13 @@ infer_location_information <- function(newentry_data, ask = TRUE){
       #print(result)
       if(!always_apply){ #skip dialog if user previously chose to always apply the geocoding data
         message("Should the detected geocoding result be applied to the data?\n\t(y)es, (n)o, yes to (a)ll, (s)kip geocoding for all entries")
+        #Display the proposed location on a map
+        map <- leaflet() %>% 
+          setView(result$lon,result$lat, 10) %>% 
+          addTiles() %>% 
+          addPopups(result$lon,result$lat, paste0("Proposed location of:<br/><b>", newentry_data$Titel[i],"</b>" ) )
+        print(map)
+        #await user response
         choice <- readline()
         if(choice=="y")
           once_apply <- TRUE

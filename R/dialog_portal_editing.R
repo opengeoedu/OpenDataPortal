@@ -157,11 +157,12 @@ merge_new_entries <- function(){
     creator_information <- load_form_entry_data(include_example = FALSE, creator_information_only = TRUE, filename_col = TRUE, public_information = FALSE)
     
     if(is.null(newentry_data) || nrow(newentry_data) == 0){
-      message("There are no entries to revies. All done! :)")
+      message("There are no entries to be merged. All done! :)")
       return(invisible())
     }
     # infer implicit information and add mandatory columns
-    newentry_data <- infer_columns_from_formdata(newentry_data)
+    # also asks the user to confirm given locations/coordinates
+    newentry_data <- infer_columns_from_formdata(newentry_data, confirm_existing=TRUE)
     ## tries to geocode where addresses are given and coordinates are missing
     newentry_data <- infer_location_information(newentry_data)
     portale_new <- portale <- readPortalDataCSV()
