@@ -162,7 +162,7 @@ merge_new_entries <- function(){
     }
     # infer implicit information and add mandatory columns
     # also asks the user to confirm given locations/coordinates
-    newentry_data <- infer_columns_from_formdata(newentry_data, confirm_existing=TRUE)
+    newentry_data <- infer_columns_from_formdata(newentry_data)
     ## tries to geocode where addresses are given and coordinates are missing
     newentry_data <- infer_location_information(newentry_data)
     portale_new <- portale <- readPortalDataCSV()

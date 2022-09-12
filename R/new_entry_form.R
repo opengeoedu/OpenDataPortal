@@ -28,7 +28,10 @@ send_mail<- function(from = creds_file("config/.blastula.creds")$user, recipient
           from = from,
           to = recipient,
           subject = subject,
-          credentials = creds_file("config/.blastula.creds")
+          credentials = creds_file("config/.blastula.creds"),
+          verbose = TRUE,
+          ssl_verifyhost = TRUE,
+          ssl_verifypeer = FALSE
         )
   }, error=function(e){ 
     if(shiny::isRunning()){  

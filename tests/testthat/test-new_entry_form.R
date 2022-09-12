@@ -7,7 +7,7 @@ testthat::test_that("E-Mail messaging works", {
       expect_true(
         send_mail(from=c("OpenDataPortal (noreply)" = "portal@opengeoedu.de"),
               recipient = "info@opengeoedu.de" ,
-              subject = paste0("Test meassage"), message = "message")
+              subject = paste0("Test message"), message = "message")
       )
     )
   })
