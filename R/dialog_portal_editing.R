@@ -224,7 +224,7 @@ merge_new_entries <- function(){
               message("\t6. (q)uit merge dialog (all current edits will be lost!)")
               choice <- readline()
               if(choice=="c"){
-                portale_new[overwriting_row$ID, ] <- preview_row
+                portale_new[portale_new$ID == overwriting_row$ID, ] <- preview_row
                 #keep track of merges:
                 merged_rows <- merge(merged_rows, overwriting_row, all = TRUE) 
                 break;
